@@ -37,18 +37,23 @@
 
 ## 桌面版（macOS DMG）
 
-`CIKE-0.1.0-arm64.dmg` 是打包好的 macOS 应用（Electron）：
-侧边栏含 **Profiles / Proxies / Settings**（对标 AdsPower 的菜单结构，
-收费的 Team / RPA 暂未做）。
+发布页提供 `CIKE-版本号-mac-arm64.dmg`，支持 **苹果 M 系列芯片、macOS 13 及以上**，不支持 Intel Mac。
+侧边栏含 **Profiles / Proxies / Settings**。
 
-安装测试步骤：
+本项目使用免费的临时签名（ad-hoc），构建时会验证应用签名和 DMG 完整性。
+**未使用苹果开发者证书，也未经过苹果公证**，首次打开需要用户自行确认来源并允许运行。
 
-```bash
-# 1. 双击挂载 DMG，把 CIKE.app 拖进 Applications
-# 2. 未签名应用，第一次需要清掉隔离属性（终端执行）：
-xattr -cr /Applications/CIKE.app
-# 3. 双击打开（若仍提示，在“系统设置 > 隐私与安全性”里点“仍要打开”）
-```
+安装与首次打开：
+
+1. 从本仓库 Releases 下载 DMG，将 CIKE 拖入「应用程序」，然后推出磁盘镜像。
+2. 从「应用程序」打开 CIKE；若系统阻止，前往「系统设置 → 隐私与安全性」，找到刚才的拦截记录，点击「仍要打开」，按提示确认。
+3. 如果仍提示已损坏或没有放行按钮，确认文件来自本仓库、并可用发布页的 `SHA256SUMS.txt` 核对下载文件后，只移除此应用的下载隔离标记：
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/CIKE.app
+   ```
+
+   然后再次打开。无需关闭系统安全机制；这一步仅针对 CIKE。临时签名不验证开发者身份，文件校验和也不等同于苹果公证。
 
 首次使用：
 
