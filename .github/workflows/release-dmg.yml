@@ -6,7 +6,7 @@ name: Build and Release DMG
       version:
         description: 'Version (e.g. 0.5.11)'
         required: true
-        default: '0.5.12'
+        default: '0.5.13'
 
 permissions:
   contents: write
@@ -29,11 +29,16 @@ jobs:
       - run: npm ci
       - name: Package macOS app
         run: |
+          test -s electron/assets/icon.icns
           npx electron-packager . CIKE \
             --platform=darwin --arch=arm64 \
             --icon=electron/assets/icon.icns \
             --out=dist --overwrite --prune \
             '--ignore=^/(test|.browsers|dist)'
+      - name: Verify packaged icon
+        run: |
+          ICON_NAME=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' dist/CIKE-darwin-arm64/CIKE.app/Contents/Info.plist)
+          cmp electron/assets/icon.icns "dist/CIKE-darwin-arm64/CIKE.app/Contents/Resources/$ICON_NAME"
       - name: Ad-hoc sign and verify app
         run: |
           codesign --force --deep --sign - dist/CIKE-darwin-arm64/CIKE.app
