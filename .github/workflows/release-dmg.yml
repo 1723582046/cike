@@ -8,6 +8,9 @@ name: Build and Release DMG
         required: true
         default: '0.5.11'
 
+permissions:
+  contents: write
+
 jobs:
   build-dmg:
     runs-on: macos-latest
