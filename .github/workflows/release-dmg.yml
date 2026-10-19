@@ -16,22 +16,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
       - run: npm ci
-      - run: |
-          cd electron
-          npm install
-          npx electron-packager . CIKE --platform=darwin --arch=arm64 --icon=assets/icon.icns --overwrite
-      - run: |
+      - name: Package macOS app
+        run: |
+          npx electron-packager . CIKE \
+            --platform=darwin --arch=arm64 \
+            --icon=electron/assets/icon.icns \
+            --out=dist --overwrite --prune \
+            '--ignore=^/(test|.browsers|dist)'
+      - name: Create DMG
+        run: |
           brew install create-dmg
-          cd electron
           mkdir -p dmg-staging
           cp -R dist/CIKE-darwin-arm64/CIKE.app dmg-staging/
           ln -s /Applications dmg-staging/Applications
           create-dmg --volname "CIKE" "CIKE-${{ inputs.version }}-mac-arm64.dmg" dmg-staging/
+          ls -lh *.dmg
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}
           name: CIKE v${{ inputs.version }}
-          files: electron/*.dmg
+          files: "*.dmg"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
