@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.browsers/
+data/
+*.log
+.DS_Store
+*.zip
+electron/dist/
+Thumbs.db
