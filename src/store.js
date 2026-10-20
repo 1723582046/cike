@@ -38,6 +38,12 @@ class ProfileStore {
     this.profiles = {};
     fs.mkdirSync(path.join(dataDir, 'profiles'), { recursive: true });
     this._load();
+    this.sequenceFile = path.join(dataDir, 'profile-sequence.json');
+    let saved = 0;
+    try { saved = JSON.parse(fs.readFileSync(this.sequenceFile, 'utf8')).last || 0; }
+    catch (e) { if (e.code !== 'ENOENT') throw e; }
+    this.sequence = Math.max(saved, this.list().length, ...this.list().map(p => Number(p.sequence) || (/^\d+$/.test(p.name) ? Number(p.name) : 0)));
+
   }
 
   _load() {
@@ -59,10 +65,14 @@ class ProfileStore {
   create(spec = {}) {
     const id = this._newId();
     const now = new Date().toISOString();
+    const sequence = ++this.sequence;
+    fs.writeFileSync(this.sequenceFile, JSON.stringify({ last: sequence }));
     const record = {
       id,
       ...structuredClone(DEFAULT_SPEC),
       ...spec,
+      name: String(spec.name || '').trim() || String(sequence),
+      sequence,
       viewport: { ...DEFAULT_SPEC.viewport, ...(spec.viewport || {}) },
       createdAt: now,
       updatedAt: now,
@@ -83,7 +93,7 @@ class ProfileStore {
   }
 
   list() {
-    return Object.values(this.profiles);
+    return Object.values(this.profiles).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || (a.sequence || 0) - (b.sequence || 0));
   }
 
   get(id) {
@@ -96,6 +106,7 @@ class ProfileStore {
     const safe = { ...patch };
     delete safe.id;
     delete safe.createdAt;
+    delete safe.sequence;
     Object.assign(rec, safe, { updatedAt: new Date().toISOString() });
     this._save();
     return rec;

@@ -71,9 +71,10 @@ function findFreePort(min, max) {
 }
 
 class BrowserManager {
-  constructor(store, proxyStore = null) {
+  constructor(store, proxyStore = null, settings = null) {
     this.store = store;
     this.proxyStore = proxyStore;
+    this.settings = settings;
     this.sessions = new Map(); // profileId -> { context, debugPort, headless, openedAt }
   }
 
@@ -84,7 +85,7 @@ class BrowserManager {
   listOpen() {
     return [...this.sessions.entries()].map(([profileId, s]) => ({
       profile_id: profileId,
-      debug_url: `http://127.0.0.1:${s.debugPort}`,
+      ...(s.debugPort ? { debug_url: `http://127.0.0.1:${s.debugPort}` } : {}),
       headless: s.headless,
       opened_at: new Date(s.openedAt).toISOString(),
     }));
@@ -97,14 +98,15 @@ class BrowserManager {
         profile_id: profileId,
         open: true,
         reused: true,
-        debug_url: `http://127.0.0.1:${s.debugPort}`,
+        ...(s.debugPort ? { debug_url: `http://127.0.0.1:${s.debugPort}` } : {}),
       };
     }
     const profile = this.store.get(profileId);
     if (!profile) {
       throw Object.assign(new Error(`profile not found: ${profileId}`), { status: 404 });
     }
-    const debugPort = await findFreePort(DEBUG_PORT_MIN, DEBUG_PORT_MAX);
+    const exposeDebugger = process.env.LFB_EXPOSE_DEBUGGER === '1';
+    const debugPort = exposeDebugger ? await findFreePort(DEBUG_PORT_MIN, DEBUG_PORT_MAX) : null;
     // Pin the spoofed version story to the real binary before building options.
     const realVer = await ensureRealVersion();
     if (realVer) setRealVersion(realVer);
@@ -156,20 +158,32 @@ class BrowserManager {
         proxyForLaunch = ProxyStore.toPlaywright(p);
       }
     }
-    // Chromium does not support SOCKS5 with username/password auth via
-    // --proxy-server. Route it through a local forwarder instead.
+    // Chromium cannot authenticate SOCKS5 itself. The local forwarder also
+    // inserts the operating-system proxy when that setting is enabled.
     let socksFwd = null;
     let needsWebrtcBlock = (effectiveProfile.webrtc === 'disabled');
-    if (proxyForLaunch?.server?.startsWith('socks5://') && (proxyForLaunch.username || proxyForLaunch.password)) {
+    const useSystemProxy = this.settings?.get().socksViaSystemProxy === true;
+    const isSocks = proxyForLaunch?.server?.startsWith('socks5://');
+    if (isSocks && (proxyForLaunch.username || proxyForLaunch.password || useSystemProxy)) {
       const { SocksForwarder } = require('./socksfwd');
-      const u = new URL(proxyForLaunch.server);
-      socksFwd = await SocksForwarder.start({
-        host: u.hostname,
-        port: parseInt(u.port, 10) || 1080,
-        username: proxyForLaunch.username,
-        password: proxyForLaunch.password,
-      });
-      proxyForLaunch = { server: `http://127.0.0.1:${socksFwd.port}` };
+      const u = isSocks ? new URL(proxyForLaunch.server) : null;
+      const host = u?.hostname;
+      const port = u ? (parseInt(u.port, 10) || 1080) : null;
+      const systemProxy = useSystemProxy ? await this.settings.route(host, port) : null;
+      if (systemProxy && host === systemProxy.host && port === systemProxy.port) {
+        proxyForLaunch = { server: `${systemProxy.scheme}://${systemProxy.host}:${systemProxy.port}` };
+      } else if (u || systemProxy) {
+        socksFwd = await SocksForwarder.start({
+          host,
+          port,
+          username: proxyForLaunch?.username,
+          password: proxyForLaunch?.password,
+          systemProxy,
+        });
+        proxyForLaunch = { server: `http://127.0.0.1:${socksFwd.port}` };
+      }
+    }
+    if (socksFwd) {
       // The forwarder is TCP-only; WebRTC's UDP would bypass it and leak the
       // real IP via STUN. Block WebRTC entirely in this case.
       needsWebrtcBlock = true;
@@ -196,8 +210,9 @@ class BrowserManager {
     const launchOptions = {
       ...options,
       headless,
+      ignoreDefaultArgs: ['--enable-automation'],
       args: [
-        `--remote-debugging-port=${debugPort}`,
+        ...(debugPort ? [`--remote-debugging-port=${debugPort}`] : []),
         '--no-first-run',
         '--no-default-browser-check',
         '--disable-blink-features=AutomationControlled',
@@ -236,7 +251,7 @@ class BrowserManager {
       profile_id: profileId,
       open: true,
       reused: false,
-      debug_url: `http://127.0.0.1:${debugPort}`,
+      ...(debugPort ? { debug_url: `http://127.0.0.1:${debugPort}` } : {}),
       headless,
     };
   }

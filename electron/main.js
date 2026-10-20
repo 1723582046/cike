@@ -4,12 +4,13 @@
  * Main process starts the local backend (Koa API + profile/browser manager)
  * and hosts the management UI, which talks to the same Local API over HTTP.
  */
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 const { startBackend, DATA_DIR } = require('../src/server');
 const { chromiumStatus, downloadChromium, executableMarker, brandChromiumApp } = require('./chromium');
+const { checkUpdate, installUpdate } = require('./updater');
 
 let backend = null;
 let mainWindow = null;
@@ -55,7 +56,7 @@ async function createWindow() {
 app.whenReady().then(async () => {
   applyChromiumEnv();
   try {
-    backend = await startBackend();
+    backend = await startBackend(undefined, { resolveSystemProxy: url => session.defaultSession.resolveProxy(url) });
   } catch (err) {
     console.error('[CIKE] backend failed to start:', err.message);
     app.exit(1);
@@ -105,3 +106,6 @@ ipcMain.handle('open-data-dir', async () => {
   shell.openPath(backend.dataDir);
   return { ok: true };
 });
+
+ipcMain.handle('update-check', () => checkUpdate());
+ipcMain.handle('update-install', () => installUpdate());

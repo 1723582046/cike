@@ -6,7 +6,7 @@ name: Build and Release DMG
       version:
         description: 'Version (e.g. 0.5.11)'
         required: true
-        default: '0.5.13'
+        default: '0.5.14'
 
 permissions:
   contents: write
@@ -56,18 +56,25 @@ jobs:
           hdiutil attach -readonly -nobrowse -mountpoint "$RUNNER_TEMP/cike-verify" "CIKE-${RELEASE_VERSION}-mac-arm64.dmg"
           codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/cike-verify/CIKE.app"
           hdiutil detach "$RUNNER_TEMP/cike-verify"
-          shasum -a 256 *.dmg > SHA256SUMS.txt
+          tar -czf "CIKE-${RELEASE_VERSION}-mac-arm64.dmg.tar.gz" "CIKE-${RELEASE_VERSION}-mac-arm64.dmg"
+          shasum -a 256 *.dmg *.dmg.tar.gz > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}
           name: CIKE v${{ inputs.version }}
+          make_latest: true
           body: |
+            新增环境跨页勾选、批量打开和批量删除；新环境自动数字编号，删除后不复用。
+            代理支持跨页全选与批量删除；支持 SOCKS5 经 Mac 系统代理连接。
+            更新 README，提供功能说明、检测网站和用户测试截图。
+            同时提供 DMG 与压缩安装包。
             免费临时签名版本，未经过苹果开发者签名和公证。
             适用于苹果 M 系列芯片、macOS 13 及以上。
             安装后首次打开如被阻止，请前往「系统设置 → 隐私与安全性」选择「仍要打开」。
             完整安装说明及无法放行时的处理方法见仓库 README。
           files: |
             *.dmg
+            *.dmg.tar.gz
             SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

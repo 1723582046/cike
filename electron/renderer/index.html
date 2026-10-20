@@ -65,7 +65,7 @@
         <div class="card">
           <h2>基本信息</h2>
           <div class="field-row">
-            <div class="field"><label>名称</label><input id="n-name" class="input" placeholder="例如：美国站1号"></div>
+            <p class="hint">环境名称自动使用递增数字编号，删除后不重复使用编号。</p>
             <div class="field"><label>分组</label><input id="n-group" class="input" list="n-group-list" placeholder="可选，可选已有或输入新的">
               <datalist id="n-group-list"></datalist>
             </div>
@@ -115,6 +115,9 @@
         <h1>环境管理</h1>
         <div class="toolbar">
           <input id="profile-search" class="input search" placeholder="搜索名称 / 分组…">
+          <label><input type="checkbox" id="profile-all"> 全选筛选结果</label><span id="profile-count"></span>
+          <button id="btn-open-profiles" class="btn">打开选中</button>
+          <button id="btn-del-profiles" class="btn danger-ghost">删除选中</button>
           <button id="btn-refresh-profiles" class="btn">刷新</button>
         </div>
       </div>
@@ -125,6 +128,7 @@
       <div class="page-head">
         <h1>代理管理</h1>
         <div class="toolbar">
+          <label><input type="checkbox" id="proxy-all"> 全选所有代理</label><span id="proxy-count"></span>
           <button id="btn-add-proxy" class="btn primary">添加代理</button>
           <button id="btn-check-proxies" class="btn">检测选中</button>
           <button id="btn-del-proxies" class="btn danger-ghost">删除选中</button>
@@ -152,6 +156,18 @@
           <div id="browser-progress" class="progress hidden"><div class="bar"></div></div>
           <div class="row"><button id="btn-download-browser" class="btn primary">下载 Chromium</button></div>
           <p class="hint">Chromium 约 170 MB，从 Playwright CDN 下载一次，存放在系统缓存目录。</p>
+        </div>
+        <div class="card">
+          <h2>网络</h2>
+          <label>SOCKS5 代理通过系统代理连接</label>
+          <div class="row"><select id="set-socks-system-proxy" class="input"><option value="no">否</option><option value="yes">是</option></select><button id="btn-save-proxy-route" class="btn primary small">保存</button></div>
+          <p class="hint">选择“是”后，浏览器先连本机中转，再经过当前电脑的系统代理连接 SOCKS5。没有填写代理时，只走系统代理。更改后重新打开环境生效。</p>
+        </div>
+        <div class="card">
+          <h2>软件更新</h2>
+          <div id="update-status" class="kv">尚未检查</div>
+          <div class="row"><button id="btn-check-update" class="btn small">检查更新</button><button id="btn-install-update" class="btn primary small hidden">下载并安装</button></div>
+          <p class="hint">仅支持已安装到“应用程序”的 Apple 芯片版。安装时 macOS 会要求确认权限，完成后自动重启。</p>
         </div>
         <div class="card">
           <h2>关于</h2>

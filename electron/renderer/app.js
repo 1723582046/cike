@@ -8,6 +8,8 @@ const TIMEZONE_LABELS = { auto: '跟随代理（推荐）' };
 const VIEWPORTS = ['1440x900', '1366x768', '1536x864', '1920x1080', '1280x800', '2560x1440'];
 const LOCALES = ['auto', 'zh-CN', 'en-US', 'en-GB', 'de-DE', 'fr-FR', 'ja-JP'];
 
+const selectedProfiles = new Set(), selectedProxies = new Set();
+let batchBusy = false;
 const state = { profiles: [], proxies: [], chromium: null, page: 'profiles', activeGroup: '', profilePage: 0, proxyPage: 0 };
 
 function apiBase() { return (window.lfb?.apiBase || '').replace(/\/$/, ''); }
@@ -151,8 +153,6 @@ async function autoCheckNewProxy(manual = false) {
 }
 
 async function saveNewProfile(openAfter = false) {
-  const name = document.getElementById('n-name').value.trim();
-  if (!name) { toast('请填写环境名称', true); return; }
   const proxyId = document.getElementById('n-proxy').value || null;
 
   // Force proxy check before creating (if a proxy is selected)
@@ -166,7 +166,6 @@ async function saveNewProfile(openAfter = false) {
 
   const [vw, vh] = document.getElementById('n-vp').value.split('x').map(Number);
   const spec = {
-    name,
     group: document.getElementById('n-group').value.trim(),
     platform: document.getElementById('n-platform').value,
     locale: document.getElementById('n-locale').value,
@@ -187,12 +186,12 @@ async function saveNewProfile(openAfter = false) {
     const r = await api('/api/profiles', { method: 'POST', body: JSON.stringify(spec) });
     toast('环境已创建');
     // Reset form
-    document.getElementById('n-name').value = '';
+    await loadProfiles();
     document.getElementById('n-group').value = '';
     document.getElementById('n-proxy-result').textContent = '';
-    if (openAfter && r.id) {
+    if (openAfter && r.profile?.id) {
       // Open with proxy check
-      await openProfileWithCheck(r.id);
+      await openProfileWithCheck(r.profile.id);
     } else {
       showPage('profiles');
     }
@@ -243,6 +242,7 @@ async function loadProfiles() {
   try {
     const { profiles } = await api('/api/profiles');
     state.profiles = profiles;
+    for (const id of selectedProfiles) if (!profiles.some(p => p.id === id)) selectedProfiles.delete(id);
     renderProfiles();
   } catch (e) { toast('加载环境失败：' + e.message, true); }
 }
@@ -272,6 +272,7 @@ function renderProfiles() {
     (!q || (p.name + ' ' + (p.group || '')).toLowerCase().includes(q)) &&
     (!gf || p.group === gf));
 
+  syncSelection('profile', rows, selectedProfiles);
   const list = document.getElementById('profiles-list');
   if (!rows.length) {
     list.innerHTML = '<div class="list-empty">还没有环境，点击左侧「新建环境」创建一个。</div>';
@@ -287,6 +288,7 @@ function renderProfiles() {
 
   list.innerHTML = pageRows.map((p) => `
     <div class="env-card ${p.open ? 'running' : ''}">
+      <input type="checkbox" class="profile-sel" value="${p.id}" aria-label="选择环境 ${esc(p.name)}" ${selectedProfiles.has(p.id) ? 'checked' : ''}>
       <span class="dot"></span>
       <div class="info">
         <div class="name">${esc(p.name)}</div>
@@ -537,6 +539,7 @@ async function loadProxies() {
   try {
     const { proxies } = await api('/api/proxies');
     state.proxies = proxies;
+    for (const id of selectedProxies) if (!proxies.some(p => p.id === id)) selectedProxies.delete(id);
     renderProxies();
   } catch (e) { toast('加载代理失败：' + e.message, true); }
 }
@@ -548,6 +551,7 @@ function statusPill(x) {
 }
 
 function renderProxies() {
+  syncSelection('proxy', state.proxies, selectedProxies);
   const list = document.getElementById('proxies-list');
   if (!state.proxies.length) {
     list.innerHTML = '<div class="list-empty">还没有代理，点击「添加代理」批量导入。</div>';
@@ -562,7 +566,7 @@ function renderProxies() {
 
   list.innerHTML = pageRows.map((x) => `
     <div class="proxy-card">
-      <input type="checkbox" class="proxy-sel" value="${x.id}">
+      <input type="checkbox" class="proxy-sel" value="${x.id}" aria-label="选择代理 ${esc(x.remark)}" ${selectedProxies.has(x.id) ? 'checked' : ''}>
       <div class="info">
         <div class="name">${esc(x.remark)}</div>
         <div class="meta">
@@ -581,7 +585,7 @@ function renderProxies() {
 }
 
 function selectedProxyIds() {
-  return [...document.querySelectorAll('.proxy-sel:checked')].map((c) => c.value);
+  return [...selectedProxies];
 }
 
 document.getElementById('proxies-list').addEventListener('click', async (e) => {
@@ -686,18 +690,74 @@ document.getElementById('btn-check-proxies').onclick = async (e) => {
   finally { e.target.disabled = false; }
 };
 
-document.getElementById('btn-del-proxies').onclick = async () => {
-  const ids = selectedProxyIds();
-  if (!ids.length) { toast('请先勾选代理', true); return; }
-  if (!confirm(`删除选中的 ${ids.length} 条代理？`)) return;
-  for (const id of ids) await api('/api/proxies/' + id, { method: 'DELETE' }).catch(() => {});
-  await loadProxies();
-  toast('已删除');
-};
+function filteredProfiles() {
+  const q = document.getElementById('profile-search').value.trim().toLowerCase();
+  return state.profiles.filter(p => (!q || (p.name + ' ' + (p.group || '')).toLowerCase().includes(q)) && (!state.activeGroup || p.group === state.activeGroup));
+}
+function syncSelection(type, rows, selected) {
+  const all = document.getElementById(type + '-all');
+  const count = rows.filter(p => selected.has(p.id)).length;
+  all.checked = rows.length > 0 && count === rows.length;
+  all.indeterminate = count > 0 && count < rows.length;
+  all.disabled = batchBusy || !rows.length;
+  document.getElementById(type + '-count').textContent = `已选 ${selected.size} 项`;
+}
+for (const [type, selected, rows, render] of [
+  ['profile', selectedProfiles, filteredProfiles, renderProfiles],
+  ['proxy', selectedProxies, () => state.proxies, renderProxies],
+]) {
+  document.getElementById(type === 'profile' ? 'profiles-list' : 'proxies-list').addEventListener('change', e => {
+    if (!e.target.matches('.' + type + '-sel')) return;
+    if (batchBusy) { render(); return; }
+    if (e.target.checked) selected.add(e.target.value); else selected.delete(e.target.value);
+    render();
+  });
+  document.getElementById(type + '-all').onchange = e => {
+    for (const row of rows()) { if (e.target.checked) selected.add(row.id); else selected.delete(row.id); }
+    render();
+  };
+}
+async function runBatch(type, action) {
+  if (batchBusy) return;
+  const selected = type === 'profile' ? selectedProfiles : selectedProxies;
+  const ids = [...selected];
+  if (!ids.length) { toast('请先勾选需要操作的项目', true); return; }
+  if (action === 'delete' && !confirm(`删除选中的 ${ids.length} 个${type === 'profile' ? '环境及其全部数据（运行中的环境将关闭）' : '代理'}？`)) return;
+  if (action === 'open' && !state.chromium?.installed) { toast('请先下载 Chromium 内核', true); return; }
+  batchBusy = true;
+  const buttons = ['btn-open-profiles', 'btn-del-profiles', 'btn-del-proxies'].map(id => document.getElementById(id));
+  buttons.forEach(b => b.disabled = true);
+  let done = 0;
+  const failures = [];
+  try {
+    for (const id of ids) {
+      try {
+        if (action === 'open') {
+          await api('/api/openBrowser', { method: 'POST', body: JSON.stringify({ profile_id: id }) });
+        } else {
+          await api('/api/' + (type === 'profile' ? 'profiles/' : 'proxies/') + id, { method: 'DELETE' });
+        }
+        selected.delete(id);
+        done++;
+      } catch (e) { failures.push(e.message); }
+    }
+  } finally {
+    batchBusy = false;
+    buttons.forEach(b => b.disabled = false);
+    await loadProfiles();
+    await loadProxies();
+  }
+  toast(`完成 ${done}/${ids.length} 项` + (failures.length ? `，失败 ${failures.length} 项：${failures[0]}` : ''), failures.length > 0);
+}
+document.getElementById('btn-open-profiles').onclick = () => runBatch('profile', 'open');
+document.getElementById('btn-del-profiles').onclick = () => runBatch('profile', 'delete');
+document.getElementById('btn-del-proxies').onclick = () => runBatch('proxy', 'delete');
 
 // ---------- 设置 ----------
 
 async function loadSettings() {
+  const { settings } = await api('/api/settings');
+  document.getElementById('set-socks-system-proxy').value = settings.socksViaSystemProxy ? 'yes' : 'no';
   document.getElementById('set-api-url').value = apiBase() + '/';
   document.getElementById('set-api-token').value = token();
   try {
@@ -757,6 +817,28 @@ document.getElementById('btn-search').onclick = () => {
   document.getElementById('profile-search').focus();
 };
 document.getElementById('btn-download-browser').onclick = startChromiumDownload;
+document.getElementById('btn-save-proxy-route').onclick = async () => {
+  try {
+    await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ socksViaSystemProxy: document.getElementById('set-socks-system-proxy').value === 'yes' }) });
+    toast('代理连接设置已保存');
+  } catch (e) { toast(e.message, true); }
+};
+document.getElementById('btn-check-update').onclick = async () => {
+  const status = document.getElementById('update-status');
+  status.textContent = '正在检查…';
+  try {
+    const info = await window.lfb.checkUpdate();
+    status.textContent = info.available ? `发现新版本 ${info.latest}（当前 ${info.current}）` : `已是最新版本 ${info.current}`;
+    document.getElementById('btn-install-update').classList.toggle('hidden', !info.available);
+  } catch (e) { status.textContent = '检查失败'; toast(e.message, true); }
+};
+document.getElementById('btn-install-update').onclick = async () => {
+  const button = document.getElementById('btn-install-update');
+  button.disabled = true;
+  document.getElementById('update-status').textContent = '正在下载并安装…';
+  try { await window.lfb.installUpdate(); }
+  catch (e) { button.disabled = false; document.getElementById('update-status').textContent = '安装失败'; toast(e.message, true); }
+};
 document.getElementById('btn-banner-download').onclick = () => { showPage('settings'); startChromiumDownload(); };
 document.getElementById('btn-token-show').onclick = (e) => {
   const i = document.getElementById('set-api-token');

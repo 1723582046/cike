@@ -24,6 +24,7 @@ const { ProfileStore } = require('./store');
 const { ProxyStore } = require('./proxystore');
 const { BrowserManager } = require('./browser');
 const { checkProxy } = require('./proxycheck');
+const { Settings } = require('./settings');
 
 const VERSION = require('../package.json').version;
 const DATA_DIR = process.env.LFB_DATA || path.join(os.homedir(), '.local-fingerprint-browser');
@@ -86,12 +87,13 @@ function resolveProxy(profile, proxyStore) {
  * Build the backend (stores + Koa app) without listening.
  * Returns { app, store, proxyStore, browsers, token, dataDir }.
  */
-function buildBackend(dataDir = DATA_DIR) {
+function buildBackend(dataDir = DATA_DIR, options = {}) {
   ensureDataDir(dataDir);
   const token = getToken(dataDir);
   const store = new ProfileStore(dataDir);
   const proxyStore = new ProxyStore(dataDir);
-  const browsers = new BrowserManager(store, proxyStore);
+  const settings = new Settings(dataDir, options.resolveSystemProxy);
+  const browsers = new BrowserManager(store, proxyStore, settings);
 
   const app = new Koa();
   const router = new Router({ prefix: '/api' });
@@ -121,6 +123,14 @@ function buildBackend(dataDir = DATA_DIR) {
   // --- meta ---
   router.get('/getVersion', (ctx) => {
     ctx.body = { ok: true, version: VERSION, name: 'local-fingerprint-browser' };
+  });
+
+  router.get('/settings', (ctx) => {
+    ctx.body = { ok: true, settings: settings.get() };
+  });
+
+  router.patch('/settings', (ctx) => {
+    ctx.body = { ok: true, settings: settings.set(ctx.request.body || {}) };
   });
 
   // --- profiles ---
@@ -200,7 +210,7 @@ function buildBackend(dataDir = DATA_DIR) {
         results.push({ id, status: 'failed', error: 'not found' });
         continue;
       }
-      const r = await checkProxy(secret);
+      const r = await checkProxy(secret, settings);
       proxyStore.setCheckResult(id, {
         status: r.status,
         exitIp: r.exitIp || null,
@@ -243,12 +253,12 @@ function buildBackend(dataDir = DATA_DIR) {
 
   app.use(router.routes()).use(router.allowedMethods());
 
-  return { app, store, proxyStore, browsers, token, dataDir };
+  return { app, store, proxyStore, browsers, settings, token, dataDir };
 }
 
 /** Start listening; writes the discovery file. Returns { url, port, server, ...backend }. */
-async function startBackend(dataDir = DATA_DIR) {
-  const backend = buildBackend(dataDir);
+async function startBackend(dataDir = DATA_DIR, options = {}) {
+  const backend = buildBackend(dataDir, options);
   const port = await findFreePort(PORT_MIN, PORT_MAX);
   const url = `http://127.0.0.1:${port}/`;
   fs.writeFileSync(path.join(backend.dataDir, DISCOVERY_FILE), url + '\n');

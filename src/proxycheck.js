@@ -6,6 +6,7 @@
  */
 const { execFile } = require('child_process');
 const { ProxyStore } = require('./proxystore');
+const { SocksForwarder } = require('./socksfwd');
 
 function curl(args, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
@@ -21,11 +22,16 @@ function curl(args, timeoutMs = 15000) {
 /**
  * Check one proxy. Returns { status: 'ok'|'failed', exitIp, country, timezone, error }.
  */
-async function checkProxy(proxy) {
+async function checkProxy(proxy, settings) {
   if (proxy.type === 'ssh') {
     return { status: 'unchecked', error: 'ssh proxies cannot be checked with curl' };
   }
-  const px = ProxyStore.toCurlArg(proxy);
+  let forwarder;
+  if (proxy.type === 'socks5' && settings?.get().socksViaSystemProxy) {
+    const systemProxy = await settings.route(proxy.host, proxy.port);
+    forwarder = await SocksForwarder.start({ host: proxy.host, port: proxy.port, username: proxy.username, password: proxy.password, systemProxy });
+  }
+  const px = forwarder ? `http://127.0.0.1:${forwarder.port}` : ProxyStore.toCurlArg(proxy);
   try {
     const exitIp = await curl(['-x', px, 'https://api.ipify.org']);
     if (!/^[0-9a-fA-F.:]+$/.test(exitIp) || exitIp.length > 45) {
@@ -42,6 +48,8 @@ async function checkProxy(proxy) {
     return { status: 'ok', exitIp, country, countryCode, timezone };
   } catch (e) {
     return { status: 'failed', exitIp: null, country: null, countryCode: null, timezone: null, error: e.message };
+  } finally {
+    await forwarder?.stop();
   }
 }
 
