@@ -71,8 +71,9 @@ function findFreePort(min, max) {
 }
 
 class BrowserManager {
-  constructor(store, proxyStore = null, settings = null) {
+  constructor(store, proxyStore = null, settings = null, options = {}) {
     this.store = store;
+    this.downloadsDirectory = options.downloadsDirectory;
     this.proxyStore = proxyStore;
     this.settings = settings;
     this.sessions = new Map(); // profileId -> { context, debugPort, headless, openedAt }
@@ -234,6 +235,7 @@ class BrowserManager {
     // The Dock will show the default Chromium icon until then.
     // Launch the browser (direct executable; per-profile .app disabled).
     const context = await chromium.launchPersistentContext(this.store.profileDir(profileId), launchOptions);
+    const downloads = require('./downloads').attachDownloads(context, this.downloadsDirectory);
     for (const script of scripts) {
       await context.addInitScript(script);
     }
@@ -241,7 +243,7 @@ class BrowserManager {
     if (extraHeaders) {
       await context.setExtraHTTPHeaders(extraHeaders);
     }
-    const session = { context, debugPort, headless, openedAt: Date.now(), socksFwd };
+    const session = { context, debugPort, headless, openedAt: Date.now(), socksFwd, downloads };
     this.sessions.set(profileId, session);
     context.on('close', async () => {
       this.sessions.delete(profileId);
@@ -259,6 +261,7 @@ class BrowserManager {
   async close(profileId) {
     const s = this.sessions.get(profileId);
     if (!s) return { profile_id: profileId, open: false };
+    await s.downloads.wait();
     await s.context.close().catch(() => {});
     if (s.socksFwd) { try { await s.socksFwd.stop(); } catch { /* ignore */ } }
     this.sessions.delete(profileId);

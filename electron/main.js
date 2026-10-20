@@ -56,7 +56,7 @@ async function createWindow() {
 app.whenReady().then(async () => {
   applyChromiumEnv();
   try {
-    backend = await startBackend(undefined, { resolveSystemProxy: url => session.defaultSession.resolveProxy(url) });
+    backend = await startBackend(undefined, { resolveSystemProxy: url => session.defaultSession.resolveProxy(url), downloadsDirectory: app.getPath('downloads') });
   } catch (err) {
     console.error('[CIKE] backend failed to start:', err.message);
     app.exit(1);

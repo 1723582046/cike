@@ -93,7 +93,7 @@ function buildBackend(dataDir = DATA_DIR, options = {}) {
   const store = new ProfileStore(dataDir);
   const proxyStore = new ProxyStore(dataDir);
   const settings = new Settings(dataDir, options.resolveSystemProxy);
-  const browsers = new BrowserManager(store, proxyStore, settings);
+  const browsers = new BrowserManager(store, proxyStore, settings, options);
 
   const app = new Koa();
   const router = new Router({ prefix: '/api' });
